@@ -1043,5 +1043,150 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
-});</script><div aria-hidden="true" class="audio-bank"><audio class="cue-audio" id="cue-audio-1" preload="none" src="audio/example-1-first-six-interval-classes.mp3"></audio><audio class="cue-audio" id="cue-audio-2" preload="none" src="audio/example-1-second-sequence-to-end.mp3"></audio><audio class="cue-audio" id="cue-audio-3" preload="none" src="audio/example-2-tetrachords.mp3"></audio><audio class="cue-audio" id="cue-audio-4" preload="none" src="audio/example-3-transformation-y.mp3"></audio><audio class="cue-audio" id="cue-audio-5" preload="none" src="audio/example-3-ic1-to-ic3.mp3"></audio><audio class="cue-audio" id="cue-audio-6" preload="none" src="audio/example-4-opening-0146-transposition.mp3"></audio><audio class="cue-audio" id="cue-audio-7" preload="none" src="audio/example-4-tetrachords.mp3"></audio><audio class="cue-audio" id="cue-audio-8" preload="none" src="audio/example-4-hexachords.mp3"></audio><audio class="cue-audio" id="cue-audio-9" preload="none" src="audio/example-4-end-segment-1-transformation.mp3"></audio><audio class="cue-audio" id="cue-audio-10" preload="none" src="audio/example-5-end-segment-1-recording.mp3"></audio><audio class="cue-audio" id="cue-audio-11" preload="none" src="audio/example-6-end-segment-2-recording.mp3"></audio><audio class="cue-audio" id="cue-audio-12" preload="none" src="audio/example-7-octachord-8-22.mp3"></audio><audio class="cue-audio" id="cue-audio-13" preload="none" src="audio/example-7-transformation-y.mp3"></audio><audio class="cue-audio" id="cue-audio-14" preload="none" src="audio/example-8-simultaneities.mp3"></audio><audio class="cue-audio" id="cue-audio-15" preload="none" src="audio/example-8-recording.mp3"></audio></div></body>
+});</script><div aria-hidden="true" class="audio-bank"><audio class="cue-audio" id="cue-audio-1" preload="none" src="audio/example-1-first-six-interval-classes.mp3"></audio><audio class="cue-audio" id="cue-audio-2" preload="none" src="audio/example-1-second-sequence-to-end.mp3"></audio><audio class="cue-audio" id="cue-audio-3" preload="none" src="audio/example-2-tetrachords.mp3"></audio><audio class="cue-audio" id="cue-audio-4" preload="none" src="audio/example-3-transformation-y.mp3"></audio><audio class="cue-audio" id="cue-audio-5" preload="none" src="audio/example-3-ic1-to-ic3.mp3"></audio><audio class="cue-audio" id="cue-audio-6" preload="none" src="audio/example-4-opening-0146-transposition.mp3"></audio><audio class="cue-audio" id="cue-audio-7" preload="none" src="audio/example-4-tetrachords.mp3"></audio><audio class="cue-audio" id="cue-audio-8" preload="none" src="audio/example-4-hexachords.mp3"></audio><audio class="cue-audio" id="cue-audio-9" preload="none" src="audio/example-4-end-segment-1-transformation.mp3"></audio><audio class="cue-audio" id="cue-audio-10" preload="none" src="audio/example-5-end-segment-1-recording.mp3"></audio><audio class="cue-audio" id="cue-audio-11" preload="none" src="audio/example-6-end-segment-2-recording.mp3"></audio><audio class="cue-audio" id="cue-audio-12" preload="none" src="audio/example-7-octachord-8-22.mp3"></audio><audio class="cue-audio" id="cue-audio-13" preload="none" src="audio/example-7-transformation-y.mp3"></audio><audio class="cue-audio" id="cue-audio-14" preload="none" src="audio/example-8-simultaneities.mp3"></audio><audio class="cue-audio" id="cue-audio-15" preload="none" src="audio/example-8-recording.mp3"></audio></div><script>
+/* Preserve the reader's place while the viewport is resized. */
+(() => {
+  const article = document.querySelector('article');
+  if (!article) return;
+
+  let anchor = null;
+  let resizing = false;
+  let resizeFrame = 0;
+  let resizeTimer = 0;
+  let scrollFrame = 0;
+
+  function articleProbePoint() {
+    const rect = article.getBoundingClientRect();
+    const left = Math.max(0, rect.left);
+    const right = Math.min(window.innerWidth, rect.right);
+    return {
+      x: Math.max(1, Math.min(window.innerWidth - 2, (left + right) / 2)),
+      y: Math.max(48, Math.min(window.innerHeight - 48, window.innerHeight * 0.34))
+    };
+  }
+
+  function textAnchorAt(x, y) {
+    let node = null;
+    let offset = 0;
+
+    if (document.caretPositionFromPoint) {
+      const pos = document.caretPositionFromPoint(x, y);
+      if (pos) {
+        node = pos.offsetNode;
+        offset = pos.offset;
+      }
+    } else if (document.caretRangeFromPoint) {
+      const range = document.caretRangeFromPoint(x, y);
+      if (range) {
+        node = range.startContainer;
+        offset = range.startOffset;
+      }
+    }
+
+    if (!node || !article.contains(node)) return null;
+    if (node.nodeType !== Node.TEXT_NODE) return null;
+
+    const range = document.createRange();
+    const safeOffset = Math.min(offset, node.nodeValue ? node.nodeValue.length : 0);
+    range.setStart(node, safeOffset);
+    range.collapse(true);
+    const rect = range.getBoundingClientRect();
+    if (!Number.isFinite(rect.top)) return null;
+
+    return { type: 'text', node, offset: safeOffset, viewportY: rect.top };
+  }
+
+  function elementAnchorAt(x, y) {
+    let el = document.elementFromPoint(x, y);
+    if (el && article.contains(el)) {
+      el = el.closest('p, h2, h3, h4, figure, li, blockquote, .abstract, .hero') || el;
+    }
+
+    if (!el || !article.contains(el)) {
+      el = [...article.querySelectorAll('p, h2, h3, h4, figure, li, blockquote')]
+        .find(candidate => {
+          const rect = candidate.getBoundingClientRect();
+          return rect.bottom > 0 && rect.top < window.innerHeight;
+        });
+    }
+
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (!rect.height) return null;
+    const ratio = Math.max(0, Math.min(1, (y - rect.top) / rect.height));
+    return { type: 'element', el, ratio, viewportY: y };
+  }
+
+  function captureAnchor() {
+    if (resizing || window.scrollY < 4) {
+      if (window.scrollY < 4) anchor = null;
+      return;
+    }
+
+    const point = articleProbePoint();
+    const hit = document.elementFromPoint(point.x, point.y);
+
+    /* For figures, preserve the same relative point in the image/figure. */
+    if (hit && hit.closest && hit.closest('figure')) {
+      anchor = elementAnchorAt(point.x, point.y);
+      return;
+    }
+
+    anchor = textAnchorAt(point.x, point.y) || elementAnchorAt(point.x, point.y);
+  }
+
+  function currentAnchorY() {
+    if (!anchor) return null;
+
+    if (anchor.type === 'text') {
+      if (!anchor.node || !anchor.node.isConnected) return null;
+      const range = document.createRange();
+      const max = anchor.node.nodeValue ? anchor.node.nodeValue.length : 0;
+      range.setStart(anchor.node, Math.min(anchor.offset, max));
+      range.collapse(true);
+      return range.getBoundingClientRect().top;
+    }
+
+    if (!anchor.el || !anchor.el.isConnected) return null;
+    const rect = anchor.el.getBoundingClientRect();
+    return rect.top + rect.height * anchor.ratio;
+  }
+
+  function restoreAnchor() {
+    if (!anchor || window.scrollY < 4) return;
+    const y = currentAnchorY();
+    if (y === null || !Number.isFinite(y)) return;
+    const delta = y - anchor.viewportY;
+    if (Math.abs(delta) > 0.5) window.scrollBy(0, delta);
+  }
+
+  function restoreAfterLayout() {
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = requestAnimationFrame(restoreAnchor);
+    });
+  }
+
+  window.addEventListener('resize', () => {
+    if (!resizing) resizing = true;
+    restoreAfterLayout();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      restoreAnchor();
+      resizing = false;
+      captureAnchor();
+    }, 160);
+  }, { passive: true });
+
+  window.addEventListener('scroll', () => {
+    if (resizing) return;
+    cancelAnimationFrame(scrollFrame);
+    scrollFrame = requestAnimationFrame(captureAnchor);
+  }, { passive: true });
+
+  window.addEventListener('load', captureAnchor, { once: true });
+  document.addEventListener('DOMContentLoaded', captureAnchor, { once: true });
+})();
+</script>
+</body>
 </html>
