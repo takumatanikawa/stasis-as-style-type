@@ -1044,7 +1044,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 });</script><div aria-hidden="true" class="audio-bank"><audio class="cue-audio" id="cue-audio-1" preload="none" src="audio/example-1-first-six-interval-classes.mp3"></audio><audio class="cue-audio" id="cue-audio-2" preload="none" src="audio/example-1-second-sequence-to-end.mp3"></audio><audio class="cue-audio" id="cue-audio-3" preload="none" src="audio/example-2-tetrachords.mp3"></audio><audio class="cue-audio" id="cue-audio-4" preload="none" src="audio/example-3-transformation-y.mp3"></audio><audio class="cue-audio" id="cue-audio-5" preload="none" src="audio/example-3-ic1-to-ic3.mp3"></audio><audio class="cue-audio" id="cue-audio-6" preload="none" src="audio/example-4-opening-0146-transposition.mp3"></audio><audio class="cue-audio" id="cue-audio-7" preload="none" src="audio/example-4-tetrachords.mp3"></audio><audio class="cue-audio" id="cue-audio-8" preload="none" src="audio/example-4-hexachords.mp3"></audio><audio class="cue-audio" id="cue-audio-9" preload="none" src="audio/example-4-end-segment-1-transformation.mp3"></audio><audio class="cue-audio" id="cue-audio-10" preload="none" src="audio/example-5-end-segment-1-recording.mp3"></audio><audio class="cue-audio" id="cue-audio-11" preload="none" src="audio/example-6-end-segment-2-recording.mp3"></audio><audio class="cue-audio" id="cue-audio-12" preload="none" src="audio/example-7-octachord-8-22.mp3"></audio><audio class="cue-audio" id="cue-audio-13" preload="none" src="audio/example-7-transformation-y.mp3"></audio><audio class="cue-audio" id="cue-audio-14" preload="none" src="audio/example-8-simultaneities.mp3"></audio><audio class="cue-audio" id="cue-audio-15" preload="none" src="audio/example-8-recording.mp3"></audio></div><script>
-/* Preserve the reader's place while the viewport is resized. */
+/* Preserve the word or figure at the top of the viewport while resizing. */
 (() => {
   const article = document.querySelector('article');
   if (!article) return;
@@ -1055,66 +1055,125 @@ document.addEventListener('DOMContentLoaded', () => {
   let resizeTimer = 0;
   let scrollFrame = 0;
 
-  function articleProbePoint() {
+  function visibleArticleBounds() {
     const rect = article.getBoundingClientRect();
-    const left = Math.max(0, rect.left);
-    const right = Math.min(window.innerWidth, rect.right);
     return {
-      x: Math.max(1, Math.min(window.innerWidth - 2, (left + right) / 2)),
-      y: Math.max(48, Math.min(window.innerHeight - 48, window.innerHeight * 0.34))
+      left: Math.max(0, rect.left),
+      right: Math.min(window.innerWidth, rect.right)
     };
   }
 
-  function textAnchorAt(x, y) {
-    let node = null;
-    let offset = 0;
-
+  function caretAtPoint(x, y) {
     if (document.caretPositionFromPoint) {
       const pos = document.caretPositionFromPoint(x, y);
-      if (pos) {
-        node = pos.offsetNode;
-        offset = pos.offset;
-      }
-    } else if (document.caretRangeFromPoint) {
-      const range = document.caretRangeFromPoint(x, y);
-      if (range) {
-        node = range.startContainer;
-        offset = range.startOffset;
-      }
+      if (pos) return { node: pos.offsetNode, offset: pos.offset };
     }
-
-    if (!node || !article.contains(node)) return null;
-    if (node.nodeType !== Node.TEXT_NODE) return null;
-
-    const range = document.createRange();
-    const safeOffset = Math.min(offset, node.nodeValue ? node.nodeValue.length : 0);
-    range.setStart(node, safeOffset);
-    range.collapse(true);
-    const rect = range.getBoundingClientRect();
-    if (!Number.isFinite(rect.top)) return null;
-
-    return { type: 'text', node, offset: safeOffset, viewportY: rect.top };
+    if (document.caretRangeFromPoint) {
+      const range = document.caretRangeFromPoint(x, y);
+      if (range) return { node: range.startContainer, offset: range.startOffset };
+    }
+    return null;
   }
 
-  function elementAnchorAt(x, y) {
-    let el = document.elementFromPoint(x, y);
-    if (el && article.contains(el)) {
-      el = el.closest('p, h2, h3, h4, figure, li, blockquote, .abstract, .hero') || el;
+  function tokenRange(node, offset) {
+    if (!node || node.nodeType !== Node.TEXT_NODE || !node.nodeValue) return null;
+    const text = node.nodeValue;
+    if (!text.length) return null;
+
+    let pos = Math.max(0, Math.min(offset, text.length));
+    if (pos === text.length) pos--;
+
+    /* If the caret lands on whitespace, prefer the nearest following token. */
+    while (pos < text.length && /\s/.test(text[pos])) pos++;
+    if (pos >= text.length) {
+      pos = Math.min(offset, text.length - 1);
+      while (pos > 0 && /\s/.test(text[pos])) pos--;
+    }
+    if (/\s/.test(text[pos])) return null;
+
+    let start = pos;
+    let end = pos + 1;
+    while (start > 0 && !/\s/.test(text[start - 1])) start--;
+    while (end < text.length && !/\s/.test(text[end])) end++;
+
+    const range = document.createRange();
+    range.setStart(node, start);
+    range.setEnd(node, end);
+    return { range, start };
+  }
+
+  function textAnchorNearTop() {
+    const bounds = visibleArticleBounds();
+    if (bounds.right - bounds.left < 20) return null;
+
+    /* Probe very near the top first, then move down only if the top is blank. */
+    const ys = [6, 14, 22, 32, 44, 58, 76, 98, 124];
+    const fractions = [0.50, 0.28, 0.72, 0.14, 0.86];
+
+    for (const y of ys) {
+      if (y >= window.innerHeight) break;
+      for (const fraction of fractions) {
+        const x = bounds.left + (bounds.right - bounds.left) * fraction;
+        const caret = caretAtPoint(x, y);
+        if (!caret || !article.contains(caret.node)) continue;
+
+        const token = tokenRange(caret.node, caret.offset);
+        if (!token) continue;
+        const rects = [...token.range.getClientRects()];
+        const rect = rects.find(r => r.bottom > 0 && r.top < window.innerHeight) || rects[0];
+        if (!rect || !Number.isFinite(rect.top)) continue;
+
+        const parent = caret.node.parentElement;
+        if (parent && parent.closest('script, style, .audio-bank')) continue;
+
+        return {
+          type: 'text',
+          node: caret.node,
+          offset: token.start,
+          viewportY: rect.top
+        };
+      }
+    }
+    return null;
+  }
+
+  function figureAnchorNearTop() {
+    const bounds = visibleArticleBounds();
+    if (bounds.right - bounds.left < 20) return null;
+    const x = bounds.left + (bounds.right - bounds.left) / 2;
+
+    for (const y of [6, 18, 34, 54, 80, 112]) {
+      if (y >= window.innerHeight) break;
+      const hit = document.elementFromPoint(x, y);
+      const figure = hit && hit.closest ? hit.closest('figure') : null;
+      if (!figure || !article.contains(figure)) continue;
+      const rect = figure.getBoundingClientRect();
+      if (!rect.height) continue;
+      const ratio = Math.max(0, Math.min(1, (y - rect.top) / rect.height));
+      return { type: 'element', el: figure, ratio, viewportY: y };
+    }
+    return null;
+  }
+
+  function fallbackElementAnchor() {
+    const candidates = article.querySelectorAll('p, h2, h3, h4, figure, li, blockquote, .abstract, .hero');
+    let best = null;
+    let bestTop = Infinity;
+
+    for (const el of candidates) {
+      const rect = el.getBoundingClientRect();
+      if (rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
+      const visibleTop = Math.max(0, rect.top);
+      if (visibleTop < bestTop) {
+        bestTop = visibleTop;
+        best = { el, rect };
+      }
     }
 
-    if (!el || !article.contains(el)) {
-      el = [...article.querySelectorAll('p, h2, h3, h4, figure, li, blockquote')]
-        .find(candidate => {
-          const rect = candidate.getBoundingClientRect();
-          return rect.bottom > 0 && rect.top < window.innerHeight;
-        });
-    }
-
-    if (!el) return null;
-    const rect = el.getBoundingClientRect();
-    if (!rect.height) return null;
-    const ratio = Math.max(0, Math.min(1, (y - rect.top) / rect.height));
-    return { type: 'element', el, ratio, viewportY: y };
+    if (!best || !best.rect.height) return null;
+    const y = Math.max(0, best.rect.top);
+    const ratio = Math.max(0, Math.min(1, (y - best.rect.top) / best.rect.height));
+    return { type: 'element', el: best.el, ratio, viewportY: y };
   }
 
   function captureAnchor() {
@@ -1123,28 +1182,21 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const point = articleProbePoint();
-    const hit = document.elementFromPoint(point.x, point.y);
-
-    /* For figures, preserve the same relative point in the image/figure. */
-    if (hit && hit.closest && hit.closest('figure')) {
-      anchor = elementAnchorAt(point.x, point.y);
-      return;
-    }
-
-    anchor = textAnchorAt(point.x, point.y) || elementAnchorAt(point.x, point.y);
+    anchor = textAnchorNearTop() || figureAnchorNearTop() || fallbackElementAnchor();
   }
 
   function currentAnchorY() {
     if (!anchor) return null;
 
     if (anchor.type === 'text') {
-      if (!anchor.node || !anchor.node.isConnected) return null;
-      const range = document.createRange();
-      const max = anchor.node.nodeValue ? anchor.node.nodeValue.length : 0;
-      range.setStart(anchor.node, Math.min(anchor.offset, max));
-      range.collapse(true);
-      return range.getBoundingClientRect().top;
+      if (!anchor.node || !anchor.node.isConnected || !anchor.node.nodeValue) return null;
+      const text = anchor.node.nodeValue;
+      const offset = Math.min(anchor.offset, Math.max(0, text.length - 1));
+      const token = tokenRange(anchor.node, offset);
+      if (!token) return null;
+      const rects = [...token.range.getClientRects()];
+      const rect = rects[0];
+      return rect ? rect.top : null;
     }
 
     if (!anchor.el || !anchor.el.isConnected) return null;
